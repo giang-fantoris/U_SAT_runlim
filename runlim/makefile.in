@@ -1,0 +1,11 @@
+all: runlim runlim-remount-proc
+runlim: runlim.c makefile
+	@COMPILE@ -o runlim runlim.c -lpthread
+runlim-remount-proc: runlim-remount-proc.c makefile
+	@COMPILE@ -o runlim-remount-proc runlim-remount-proc.c
+install: all
+	install -s -m 755 runlim @PREFIX@/
+	install -s -m 4755 runlim-remount-proc @PREFIX@/
+clean:
+	rm -f runlim runlim-remount-proc
+.PHONY: all clean install

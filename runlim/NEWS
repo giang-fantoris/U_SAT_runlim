@@ -1,0 +1,96 @@
+News for Version 2.0.0rc14
+--------------------------
+
+- using monotonic real-time clock
+  (otherwise the cluster nodes using NTP with clock skew
+   give weird results - even negative running times)
+
+- explicit handle PIDs wrapping around
+
+- formatted with `clang-format`
+
+- no interval for session and group PID in single mode
+
+- additional manual test cases for those zombie issues
+
+- more precise selection of sampled and killed processes
+
+- fixed option handling for invalid short options
+
+- removed stale assertion (prevented debugging compilation)
+
+- sampling and killing zombies
+
+- try to avoid garbling messages
+
+- fixed option handling for '-v' and '-r'
+
+- made the 'kill delay' an option
+
+- fixed usage of 'CC' environment variable in configure
+  (thanks to Mate Soos finding this issue)
+
+- longer grace period before killing the process again
+  (added to allow solvers to dump state after being killed)
+
+- internal hash table for processes
+  (removes compile time dependency on maximum process ID)
+
+- report current load and maximum load
+
+- better default mount options in 'runlim-remount-proc'
+
+- semantical version numbering scheme
+
+- TAI-based time, i.e. changes to the system time (NTP or 
+  daylight saving time) cannot influence a running benchmark,
+  but got removed again as monotonic is more important
+
+News for Version 1.22
+---------------------
+
+- added '-p | --propagate' to propagate exit code
+
+- fixed version printing (thus that '1.20' does not become '1.2')
+
+- renamed 'remount' as 'runlim-remount-proc'
+
+- fixed process tree insertion
+
+- better 'read_process' (finds more descendants)
+
+- automatically try to remount '/proc' file system
+
+News for Version 1.13
+---------------------
+
+- added '--single' option
+
+- kill all child processes
+
+- more options (sampling/report rate, debugging)
+
+- more robust 'proc' and option parsing code
+
+- completely reworked process tree organization
+
+- closing 'log' if necessary
+  (thanks to Viktor Schuppan)
+
+- added '[runlim] host: ...' output
+
+- remove limiting memory through 'setrlimit (RLIMIT_AS, ...'
+  (thanks to Mathias Preiner)
+
+News for Version 1.11
+---------------------
+
+- fixed very old issue in 'strtok' with non-initialized
+  (non-zero terminated) buffer (thanks to Sam Bayless)
+
+
+News for Version 1.10
+---------------------
+
+- using RLIMIT_AS and fixed space limit copy & paste bug
+  (thanks to Hakan Hjort)

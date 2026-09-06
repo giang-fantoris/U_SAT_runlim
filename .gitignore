@@ -1,0 +1,5 @@
+venv/
+__pycache__/
+*.pyc
+runlim_logs/
+runlim/.git.backup/
