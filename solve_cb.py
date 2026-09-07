@@ -96,44 +96,59 @@ def read_file(file_name):
             relation.add((pair[0] - 1, pair[1] - 1))
     return n, W, relation, times
 
-def get_values(model, m, n, c, P, X, W, S, A, Ti):
+def get_values(model, m, n, c, P, X, W, S, A, Ti, best_value=None):
     schedule = [[0 for _ in range(c)] for _ in range(m)]
-    constraints = []
     val = lambda var_id: model[abs(var_id) - 1] if model[abs(var_id) - 1] > 0 else model[abs(var_id) - 1]
-    
+    constraints = []
+
     X = [[val(X[k][j]) for j in range(n)] for k in range(m)]
     W = [[val(W[k][j]) for j in range(n)] for k in range(m)]
     S = [[val(S[t][j]) for j in range(n)] for t in range(c)]
     A = [[val(A[t][j]) for j in range(n)] for t in range(c)]
 
-    for i in range(c):
+    for t in range(c):
         for k in range(m):
             for j in range(n):
-                if S[i][j] > 0 and (X[k][j] > 0 or W[k][j] > 0):
-                    constraints.append(S[i][j])
-                    for t in range(i, min(c, i + Ti[j])):
-                        if X[k][j] > 0:
-                            schedule[k][t] = P[j]
-                        if W[k][j] > 0:
-                            schedule[k][t] = -P[j]
-                        constraints.append(-A[t][j])
+                if A[t][j] > 0 and X[k][j] > 0:
+                    schedule[k][t] = P[j]
+                    constraints.append(-A[t][j])
+                elif A[t][j] > 0 and W[k][j] > 0:
+                    schedule[k][t] = -P[j]
+                    constraints.append(-A[t][j])
+
     peak = [0 for _ in range(c)]
     for i in range(c):
         for k in range(m):
             peak[i] += abs(schedule[k][i])
     peak = int(max(peak))
+
     return schedule, peak, constraints
 
 def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
-    """Ghi trực tiếp kết quả hiện tại vào file CSV"""
-    log_file = Path("results.csv")
-    file_exists = log_file.exists() and log_file.stat().st_size > 0
-    
-    with open(log_file, mode='a', newline='') as file:
+    """Add or update one CSV row for a unique filename/n/m/c combination."""
+    log_file = Path("Output/res_cb.csv")
+    header = [
+        "Filename", "Tasks", "Machines", "Time cycle", "Peak",
+        "Solutions times", "Variable Count", "Clause Length",
+        "Execution Time", "Status",
+    ]
+    new_row = [name, n, m, c, peak, sol, count, lenthclause, f"{exec_time:.2f}", status]
+    rows = []
+
+    if log_file.exists() and log_file.stat().st_size > 0:
+        with open(log_file, mode="r", newline="") as file:
+            reader = csv.reader(file)
+            next(reader, None)
+            rows = list(reader)
+
+    key = [str(name), str(n), str(m), str(c)]
+    rows = [row for row in rows if row[:4] != key]
+    rows.append(new_row)
+
+    with open(log_file, mode="w", newline="") as file:
         writer = csv.writer(file)
-        if not file_exists:
-            writer.writerow(['Instance', 'Tasks', 'Machines', 'Time cycle', 'Peak', 'Solutions times', 'Variable Count', 'Clause Length', 'Execution Time', 'Status'])
-        writer.writerow([name, n, m, c, peak, sol, count, lenthclause, f"{exec_time:.2f}", status])
+        writer.writerow(header)
+        writer.writerows(rows)
 
 def optimize(n, m, c, name, P, relation, Ti):
     start_time = time.time()
@@ -156,32 +171,17 @@ def optimize(n, m, c, name, P, relation, Ti):
         # GHI NHẬN KẾT QUẢ BAN ĐẦU
         log_to_csv(name, n, m, c, peak, sol, count, lenthclause, time.time() - start_time, "FEASIBLE")
         print(f"[{name}] Initial Peak: {peak}")
+        solver.add_clause(new_constraints)
 
         while True:
             sol += 1
-            solver = Cadical195()
-            lenthclause = len(clauses)
-            for clause in clauses:
-                solver.add_clause(clause)
-            
-            for i in range(c):
-                lits, weights = [], []
-                for j in range(n):
-                    lits.append(A[i][j])
-                    weights.append(P[j])
-                pb_constraint = PBEnc.leq(
-                    lits=lits, weights=weights, bound=peak - 1, top_id=count, encoding=EncType.binmerge
-                )            
-                for clause in pb_constraint:
-                    solver.add_clause(clause)
-                    lenthclause += 1 
-                if pb_constraint.nv > count:
-                    count = pb_constraint.nv + 1
-            
             result = solver.solve()
             if result:
                 model = solver.get_model()
-                schedule, new_peak, new_constraints = get_values(model, m, n, c, P, X, W, S, A, Ti)
+                schedule, new_peak, new_constraints = get_values(
+                    model, m, n, c, P, X, W, S, A, Ti, best_value=peak
+                )
+                solver.add_clause(new_constraints)
                 if new_peak < peak:
                     peak = new_peak
                     # GHI ĐÈ KẾT QUẢ TỐT HƠN NGAY LẬP TỨC
