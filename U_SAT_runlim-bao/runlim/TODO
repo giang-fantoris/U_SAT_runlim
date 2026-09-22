@@ -1,0 +1,5 @@
+- group and session might be larger than child ids
+- sample temporary disk space
+- virtual limited '/tmp/' directory with 'unshare' (see 'man 2 unshare')
+- make really killing grace period configurable at run-time
+- add back some automatic testing (also for those hard examples in 'test')
