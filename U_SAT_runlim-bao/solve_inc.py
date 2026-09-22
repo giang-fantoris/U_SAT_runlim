@@ -10,16 +10,15 @@ def generate_variables(m, n, c):
     W = [[X[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(m)]
     S = [[W[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
     A = [[S[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
-    IN = [A[-1][-1] + i + 1 for i in range(n)]
-    OUT = [IN[-1] + i + 1 for i in range(n)]
-    return X, W, S, A, IN, OUT
+    return X, W, S, A
 
 def AMO(clauses, variables):
     for i in range(len(variables)):
         for j in range(i + 1, len(variables)):
             clauses.append([-variables[i], -variables[j]])
 
-def setup(clause, m, n, c, X, W, S, A, IN, OUT, Ti, relation):
+def setup(clause, m, n, c, X, W, S, A, Ti, relation, P, UB, LB, U):
+
     for i in range(n):
         clause.append([X[j][i] for j in range(m)] + [W[j][i] for j in range(m)])
         AMO(clause, [X[j][i] for j in range(m)] + [W[j][i] for j in range(m)])
@@ -62,16 +61,28 @@ def setup(clause, m, n, c, X, W, S, A, IN, OUT, Ti, relation):
                     clause.append([-X[k][i], -X[k][j], -S[t][i], -S[t1][j]])
                     clause.append([-W[k][i], -W[k][j], -S[t][i], -S[t1][j]])
     for i in range(n):
-        clause.append([-IN[i], -OUT[i]])
-    for i in range(n):
-        for j in range(m):
-            clause.append([-X[j][i], IN[i]])
-    for i in range(n):
-        for j in range(m):
-            clause.append([-W[j][i], OUT[i]])
-    for i in range(n):
         for t in range(c - Ti[i] + 1, c):
             clause.append([-S[t][i]])
+
+    for i in range (len(U) - 1):
+        clause.append([-U[i], U[i + 1]])
+
+    count = U[-1] + 1
+    for i in range(c):
+        lits, weights = [], []
+        for j in range(n):
+            lits.append(A[i][j])
+            weights.append(P[j])
+        for j in range(len(U)):
+            lits.append(U[j])
+            weights.append(1)
+        pb_constraint = PBEnc.leq(
+            lits=lits, weights=weights, bound=UB, top_id=count, encoding=EncType.binmerge
+        )            
+        for clauses in pb_constraint:
+            clause.append(clauses)
+        if pb_constraint.nv > count:
+            count = pb_constraint.nv + 1
 
 def read_file(file_name):
     W, relation, times = [], set(), []
@@ -96,37 +107,37 @@ def read_file(file_name):
             relation.add((pair[0] - 1, pair[1] - 1))
     return n, W, relation, times
 
-def get_values(model, m, n, c, P, X, W, S, A, Ti, best_value=None):
+def get_values(model, m, n, c, P, X, W, S, A, Ti):
     schedule = [[0 for _ in range(c)] for _ in range(m)]
-    val = lambda var_id: model[abs(var_id) - 1] if model[abs(var_id) - 1] > 0 else model[abs(var_id) - 1]
     constraints = []
-
+    val = lambda var_id: model[abs(var_id) - 1] if model[abs(var_id) - 1] > 0 else model[abs(var_id) - 1]
+    
     X = [[val(X[k][j]) for j in range(n)] for k in range(m)]
     W = [[val(W[k][j]) for j in range(n)] for k in range(m)]
     S = [[val(S[t][j]) for j in range(n)] for t in range(c)]
     A = [[val(A[t][j]) for j in range(n)] for t in range(c)]
 
-    for t in range(c):
+    for i in range(c):
         for k in range(m):
             for j in range(n):
-                if A[t][j] > 0 and X[k][j] > 0:
-                    schedule[k][t] = P[j]
-                    constraints.append(-A[t][j])
-                elif A[t][j] > 0 and W[k][j] > 0:
-                    schedule[k][t] = -P[j]
-                    constraints.append(-A[t][j])
-
+                if S[i][j] > 0 and (X[k][j] > 0 or W[k][j] > 0):
+                    constraints.append(S[i][j])
+                    for t in range(i, min(c, i + Ti[j])):
+                        if X[k][j] > 0:
+                            schedule[k][t] = P[j]
+                        if W[k][j] > 0:
+                            schedule[k][t] = -P[j]
+                        constraints.append(-A[t][j])
     peak = [0 for _ in range(c)]
     for i in range(c):
         for k in range(m):
             peak[i] += abs(schedule[k][i])
     peak = int(max(peak))
-
     return schedule, peak, constraints
 
 def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
     """Add or update one CSV row for a unique filename/n/m/c combination."""
-    log_file = Path("Output/res_cb.csv")
+    log_file = Path("Output/res_inc.csv")
     header = [
         "Filename", "Tasks", "Machines", "Time cycle", "Peak",
         "Solutions times", "Variable Count", "Clause Length",
@@ -152,10 +163,13 @@ def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
 
 def optimize(n, m, c, name, P, relation, Ti):
     start_time = time.time()
-    X, W, S, A, IN, OUT = generate_variables(m, n, c)
+    X, W, S, A = generate_variables(m, n, c)
+    P_sorted = sorted(P, reverse=True)
+    UB = sum(P_sorted[i] for i in range(m))
+    LB = max(P)
+    U = [A[-1][-1] + 1 + i for i in range(UB - LB + 1)]
     clauses = []
-    setup(clauses, m, n, c, X, W, S, A, IN, OUT, Ti, relation)
-    
+    setup(clauses, m, n, c, X, W, S, A, Ti, relation, P, UB, LB, U)
     solver = Cadical195()
     for clause in clauses:
         solver.add_clause(clause)
@@ -165,23 +179,23 @@ def optimize(n, m, c, name, P, relation, Ti):
     if result:
         model = solver.get_model()
         schedule, peak, new_constraints = get_values(model, m, n, c, P, X, W, S, A, Ti)
-        count = OUT[-1] + 1
-        lenthclause = len(clauses)
+        count = len(solver.get_model())
+        lenthclause = len(model)
         
         # GHI NHẬN KẾT QUẢ BAN ĐẦU
         log_to_csv(name, n, m, c, peak, sol, count, lenthclause, time.time() - start_time, "FEASIBLE")
         print(f"[{name}] Initial Peak: {peak}")
-        solver.add_clause(new_constraints)
 
         while True:
             sol += 1
+            # Thêm ràng buộc để giảm peak
+            solver.add_clause([U[peak - LB]])
+            dinh = UB - (len(U) - peak + LB)
+            print(f"[{name}] Adding constraint to reduce peak: {peak} -> {dinh}")
             result = solver.solve()
             if result:
                 model = solver.get_model()
-                schedule, new_peak, new_constraints = get_values(
-                    model, m, n, c, P, X, W, S, A, Ti, best_value=peak
-                )
-                solver.add_clause(new_constraints)
+                schedule, new_peak, new_constraints = get_values(model, m, n, c, P, X, W, S, A, Ti)
                 if new_peak < peak:
                     peak = new_peak
                     # GHI ĐÈ KẾT QUẢ TỐT HƠN NGAY LẬP TỨC

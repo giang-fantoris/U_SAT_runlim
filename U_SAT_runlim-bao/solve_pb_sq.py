@@ -8,13 +8,11 @@ from pysat.pb import PBEnc, EncType
 def generate_variables(m, n, c):
     X = [[i + 1 + j * n for i in range(n)] for j in range(m)]
     W = [[X[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(m)]
-    sequen_va = [[W[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(1,2 * m)] # dùng để tạo AMO sequential counter cho X và W
-    S = [[sequen_va[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
-    S_new_va = [[S[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(1, c)] # dùng để tạo AMO sequential counter cho S
-    A = [[S_new_va[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
-    IN = [A[-1][-1] + i + 1 for i in range(n)]
-    OUT = [IN[-1] + i + 1 for i in range(n)]
-    return X, W, sequen_va, S, S_new_va, A, IN, OUT
+    R = [[W[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(2 * m)] # dùng để tạo AMO sequential counter cho X và W
+    S = [[R[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
+    T = [[S[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)] # dùng để tạo AMO sequential counter cho S
+    A = [[T[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
+    return X, W, R, S, T, A
 
 # def AMO(clauses, variables):
 #     for i in range(len(variables)):
@@ -28,27 +26,61 @@ def AMO_sequential(clauses, variables, aux_vars):
     for i in range( len(aux_vars)-1):
         clauses.append([-aux_vars[i], -variables[i+1]])
 
-def setup(clause, m, n, c, X, W, sequen_va, S, S_new_va, A, IN, OUT, Ti, relation):
+def setup(clause, m, n, c, X, W, R, S, T, A, Ti, relation):
+    # 1 - Each task can only be assigned to one machine at a time step
     for i in range(n):
         clause.append([X[j][i] for j in range(m)] + [W[j][i] for j in range(m)])
-        AMO_sequential(clause, [X[j][i] for j in range(m)] + [W[j][i] for j in range(m)], [sequen_va[j][i] for j in range( 2 * m-1)])
+        AMO_sequential(clause, [X[j][i] for j in range(m)] + [W[j][i] for j in range(m - 1, -1, -1)], [R[j][i] for j in range( 2 * m-1)])
+        """clause.append([-X[0][i], R[0][i]])
+        clause.append([-R[0][i], X[0][i]])
+        for k in range(1, 2 * m - 1):
+            clause.append([R[k][i], -R[k - 1][i]])
+            if k < m:
+                clause.append([-X[k][i], R[k][i]])
+                clause.append([-X[k][i], -R[k - 1][i]])
+                clause.append([-R[k][i], R[k - 1][i], X[k][i]])
+            if k >= m:
+                clause.append([-W[2 * m - k - 1][i], R[k][i]])
+                clause.append([-W[2 * m - k - 1][i], -R[k - 1][i]])
+                clause.append([-R[k][i], R[k - 1][i], W[2 * m - k - 1][i]])
+
+        clause.append([W[0][i], -R[2 * m - 2][i]])"""
+
+            
+            
+    # 2 - Precedence constraints: machine gates
     for (i, j) in relation:
-        for s in range(m):
-            for k in range(s):
-                clause.append([-X[s][i], -X[k][j]])
-            for k in range(s + 1, m):
-                clause.append([-W[s][i], -W[k][j]])
-    for i, j in relation:
-        for s in range(m):
-            for s_ in range(m):
-                clause.append([-W[s][i], -X[s_][j]])
+       for k in range(2 * m):
+            if k < m:
+               clause.append([-X[k][i], -R[k - 1][j]])
+            if k >= m:
+                clause.append([-W[2 * m - k - 1][i], -R[k - 1][j]])
+
+    # 3 - Each task can only be started on one time step
     for i in range(n):
-        clause.append([S[t][i] for t in range(0, c)])
-        AMO_sequential(clause, [S[t][i] for t in range(0, c)],[S_new_va[t][i] for t in range( c-1)])
+        clause.append([S[t][i] for t in range(0, c - Ti[i] + 1)])
+        AMO_sequential(clause, [S[t][i] for t in range(0, c - Ti[i] + 1)],[T[t][i] for t in range( c - Ti[i])])
+
+        """clause.append([-T[0][i], S[0][i]])
+        clause.append([-S[0][i], T[0][i]])
+        last_time = c - Ti[i] + 1
+        for t in range(1, last_time - 1):
+            clause.append([T[t][i], -T[t - 1][i]])
+            clause.append([-S[t][i], T[t][i]])
+            clause.append([-S[t][i], -T[t - 1][i]])
+            clause.append([-T[t][i], T[t - 1][i], S[t][i]])
+
+        clause.append([S[last_time - 1][i], -T[last_time - 2][i]])
+        clause.append([-S[last_time - 1][i], T[last_time - 2][i]])"""
+
+
+    # 4 - Each task can only be assigned at time steps that are within its processing time
     for i in range(n):
         for t0 in range(0, c):
             for t in range(t0, min(t0 + Ti[i], c)):
                 clause.append([-S[t0][i], A[t][i]])
+
+    # 5 - If task i is assigned to a machine at time t, then it cannot be assigned to any other machine at the same time step
     for t in range(c):
         for s in range(m):
             for i in range(n):
@@ -57,6 +89,8 @@ def setup(clause, m, n, c, X, W, sequen_va, S, S_new_va, A, IN, OUT, Ti, relatio
                         clause.append([-A[t][j], -A[t][i], -X[s][j], -X[s][i]])
                         clause.append([-A[t][j], -A[t][i], -W[s][j], -W[s][i]])
                         clause.append([-A[t][j], -A[t][i], -X[s][j], -W[s][i]])
+
+    # 6 - If task i is assigned to in gate, it cannot be assigned after task j in out gate
     for i in range(n):
         for j in range(n):
             if i != j:
@@ -64,20 +98,28 @@ def setup(clause, m, n, c, X, W, sequen_va, S, S_new_va, A, IN, OUT, Ti, relatio
                     for t in range(c):
                         for t1 in range(t):
                             clause.append([-S[t][i], -S[t1][j], -X[k][i], -W[k][j]])
+
+    # 7 - Precedence constraints: if task i is assigned to a machine at time t, then task j cannot be assigned before time t + Ti[i] - 1
+    # task i and j must be assigned to the same machine
     for (i, j) in relation:
-        for t in range(c):
-            for k in range(m):
-                for t1 in range(t):
-                    clause.append([-X[k][i], -X[k][j], -S[t][i], -S[t1][j]])
-                    clause.append([-W[k][i], -W[k][j], -S[t][i], -S[t1][j]])
-    for i in range(n):
-        clause.append([-IN[i], -OUT[i]])
-    for i in range(n):
-        for j in range(m):
-            clause.append([-X[j][i], IN[i]])
-    for i in range(n):
-        for j in range(m):
-            clause.append([-W[j][i], OUT[i]])
+        for k in range(m):
+            left = Ti[i] - 1
+            right = c - Ti[j]
+            clause.append([-X[k][i], -X[k][j], -T[left][j]])
+            clause.append([-W[k][j], -W[k][i], -T[left][j]])
+            clause.append([-X[k][i], -W[k][j], -T[left][j]])
+            for t in range(left + 1, right):
+                t_i = t - Ti[i] + 1
+                clause.append([-X[k][i], -X[k][j], -S[t_i][i], -T[t][j]])
+                clause.append([-W[k][j], -W[k][i], -S[t_i][i], -T[t][j]])
+                clause.append([-X[k][i], -W[k][j], -S[t_i][i], -T[t][j]])
+
+            for t in range(max(0, right - Ti[i] + 1), c - Ti[i] + 1):
+                clause.append([-X[k][i], -X[k][j], -S[t][i], - T[c - Ti[j] - 1][j]])
+                clause.append([-W[k][j], -W[k][i], -S[t][i], - T[c - Ti[j] - 1][j]])
+                clause.append([-X[k][i], -W[k][j], -S[t][i], - T[c - Ti[j] - 1][j]])
+
+    # 8 - Task cannot be assigned over fesible time steps
     for i in range(n):
         for t in range(c - Ti[i] + 1, c):
             clause.append([-S[t][i]])
@@ -126,16 +168,16 @@ def get_values(model, m, n, c, P, X, W, S, A, Ti):
                         if W[k][j] > 0:
                             schedule[k][t] = -P[j]
                         constraints.append(-A[t][j])
-    peak = [0 for _ in range(c)]
+    lpeak = [0 for _ in range(c)]
     for i in range(c):
         for k in range(m):
-            peak[i] += abs(schedule[k][i])
-    peak = int(max(peak))
-    return schedule, peak, constraints
+            lpeak[i] += abs(schedule[k][i])
+    peak = int(max(lpeak))
+    return schedule + [lpeak], peak, constraints
 
 def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
     """Add or update one CSV row for a unique filename/n/m/c combination."""
-    log_file = Path("Output/res_pb.csv")
+    log_file = Path("Output/res_pb_sq.csv")
     header = [
         "Filename", "Tasks", "Machines", "Time cycle", "Peak",
         "Solutions times", "Variable Count", "Clause Length",
@@ -161,9 +203,9 @@ def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
 
 def optimize(n, m, c, name, P, relation, Ti):
     start_time = time.time()
-    X, W, sequen_va, S, S_new_va, A, IN, OUT = generate_variables(m, n, c)
+    X, W, R, S, T, A = generate_variables(m, n, c)
     clauses = []
-    setup(clauses, m, n, c, X, W, sequen_va, S, S_new_va, A, IN, OUT, Ti, relation)
+    setup(clauses, m, n, c, X, W, R, S, T, A, Ti, relation)
     
     solver = Cadical195()
     for clause in clauses:
@@ -174,7 +216,9 @@ def optimize(n, m, c, name, P, relation, Ti):
     if result:
         model = solver.get_model()
         schedule, peak, new_constraints = get_values(model, m, n, c, P, X, W, S, A, Ti)
-        count = OUT[-1] + 1
+        count = A[-1][-1] + 1
+        for line in schedule:
+            print(line)
         lenthclause = len(clauses)
         
         # GHI NHẬN KẾT QUẢ BAN ĐẦU
@@ -210,12 +254,12 @@ def optimize(n, m, c, name, P, relation, Ti):
                     peak = new_peak
                     # GHI ĐÈ KẾT QUẢ TỐT HƠN NGAY LẬP TỨC
                     log_to_csv(name, n, m, c, peak, sol, count, lenthclause, time.time() - start_time, "IMPROVED")
-                    print(f"[{name}] New Peak: {peak}")
             else:
                 print(f"[{name}] Optimal Peak: {peak}")
                 log_to_csv(name, n, m, c, peak, sol, count, lenthclause, time.time() - start_time, "OPTIMAL")
                 return peak
     else:
+        print(f"[{name}] UNSAT")
         log_to_csv(name, n, m, c, 0, 0, 0, len(clauses), time.time() - start_time, "UNSAT")
         return 0
 
