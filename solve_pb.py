@@ -10,14 +10,16 @@ def generate_variables(m, n, c):
     W = [[X[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(m)]
     S = [[W[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
     A = [[S[-1][-1] + i + 1 + j * n for i in range(n)] for j in range(c)]
-    return X, W, S, A
+    IN = [A[-1][-1] + i + 1 for i in range(n)]
+    OUT = [IN[-1] + i + 1 for i in range(n)]
+    return X, W, S, A, IN, OUT
 
 def AMO(clauses, variables):
     for i in range(len(variables)):
         for j in range(i + 1, len(variables)):
             clauses.append([-variables[i], -variables[j]])
 
-def setup(clause, m, n, c, X, W, S, A, Ti, relation):
+def setup(clause, m, n, c, X, W, S, A, IN, OUT, Ti, relation):
     for i in range(n):
         clause.append([X[j][i] for j in range(m)] + [W[j][i] for j in range(m)])
         AMO(clause, [X[j][i] for j in range(m)] + [W[j][i] for j in range(m)])
@@ -59,6 +61,14 @@ def setup(clause, m, n, c, X, W, S, A, Ti, relation):
                 for t1 in range(t):
                     clause.append([-X[k][i], -X[k][j], -S[t][i], -S[t1][j]])
                     clause.append([-W[k][i], -W[k][j], -S[t][i], -S[t1][j]])
+    for i in range(n):
+        clause.append([-IN[i], -OUT[i]])
+    for i in range(n):
+        for j in range(m):
+            clause.append([-X[j][i], IN[i]])
+    for i in range(n):
+        for j in range(m):
+            clause.append([-W[j][i], OUT[i]])
     for i in range(n):
         for t in range(c - Ti[i] + 1, c):
             clause.append([-S[t][i]])
@@ -107,12 +117,12 @@ def get_values(model, m, n, c, P, X, W, S, A, Ti):
                         if W[k][j] > 0:
                             schedule[k][t] = -P[j]
                         constraints.append(-A[t][j])
-    Lpeak = [0 for _ in range(c)]
+    peak = [0 for _ in range(c)]
     for i in range(c):
         for k in range(m):
-            Lpeak[i] += abs(schedule[k][i])
-    peak = int(max(Lpeak))
-    return schedule + [Lpeak], peak, constraints
+            peak[i] += abs(schedule[k][i])
+    peak = int(max(peak))
+    return schedule, peak, constraints
 
 def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
     """Add or update one CSV row for a unique filename/n/m/c combination."""
@@ -142,9 +152,9 @@ def log_to_csv(name, n, m, c, peak, sol, count, lenthclause, exec_time, status):
 
 def optimize(n, m, c, name, P, relation, Ti):
     start_time = time.time()
-    X, W, S, A = generate_variables(m, n, c)
+    X, W, S, A, IN, OUT = generate_variables(m, n, c)
     clauses = []
-    setup(clauses, m, n, c, X, W, S, A, Ti, relation)
+    setup(clauses, m, n, c, X, W, S, A, IN, OUT, Ti, relation)
     
     solver = Cadical195()
     for clause in clauses:
@@ -155,7 +165,7 @@ def optimize(n, m, c, name, P, relation, Ti):
     if result:
         model = solver.get_model()
         schedule, peak, new_constraints = get_values(model, m, n, c, P, X, W, S, A, Ti)
-        count = A[-1][-1] + 1
+        count = OUT[-1] + 1
         lenthclause = len(clauses)
         
         # GHI NHẬN KẾT QUẢ BAN ĐẦU
@@ -191,6 +201,7 @@ def optimize(n, m, c, name, P, relation, Ti):
                     peak = new_peak
                     # GHI ĐÈ KẾT QUẢ TỐT HƠN NGAY LẬP TỨC
                     log_to_csv(name, n, m, c, peak, sol, count, lenthclause, time.time() - start_time, "IMPROVED")
+                    print(f"[{name}] New Peak: {peak}")
             else:
                 print(f"[{name}] Optimal Peak: {peak}")
                 log_to_csv(name, n, m, c, peak, sol, count, lenthclause, time.time() - start_time, "OPTIMAL")

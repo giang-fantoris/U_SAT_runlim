@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 
-FILENAME = "solve_pb_sq.py"
+FILENAME = "solve_cb.py"
 TIMEOUT = 3600
 
 
