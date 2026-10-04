@@ -2,9 +2,10 @@ import docplex.cp
 from docplex.cp.model import CpoModel
 import time
 import csv
+from pathlib import Path
 from docplex.cp.config import context
 
-context.solver.local.execfile = "/opt/ibm/ILOG/CPLEX_Studio2211/cpoptimizer/bin/x86-64_linux/cpoptimizer"
+context.solver.local.execfile = r"C:\Users\TRUONG GIANG\AppData\Local\Programs\Python\Python38\Scripts\cpoptimizer.exe"
 
 
 def create_assignment_model(n, m, c, model, Ex_times):
@@ -77,7 +78,10 @@ def add_assignment_constraints(n, m, c, model, X, S, O, Wmax, W, Ex_times, prece
     for t in range(c):
         model.add_constraint(
             model.sum([
-                O[j] * model.sum([S[j][s] for s in range(t - Ex_times[j] + 1, t + 1)])
+                W[j] * model.sum([
+                    S[j][s]
+                    for s in range(max(0, t - Ex_times[j] + 1), t + 1)
+                ])
                 for j in range(n)
             ]) <= Wmax
         )
@@ -164,7 +168,9 @@ def get_value(solution, n, m, c, W, Ex_times):
     return schedule, solution.get_value("Wmax"), peak
 
 def write_to_csv(result):
-    with open("Output/result_cplex.csv", "a") as f:
+    output_dir = Path("Output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_dir / "result_cplex.csv", "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(result)
 
