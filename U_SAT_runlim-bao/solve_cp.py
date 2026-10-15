@@ -4,7 +4,7 @@ import time
 import csv
 from docplex.cp.config import context
 
-context.solver.local.execfile = "/opt/ibm/ILOG/CPLEX_Studio2211/cpoptimizer/bin/x86-64_linux/cpoptimizer"
+#context.solver.local.execfile = "/opt/ibm/ILOG/CPLEX_Studio2211/cpoptimizer/bin/x86-64_linux/cpoptimizer"
 
 
 def create_assignment_model(n, m, c, model, Ex_times):
@@ -14,7 +14,7 @@ def create_assignment_model(n, m, c, model, Ex_times):
     Wmax = model.integer_var(name="Wmax")
     return model, X, S, Wmax, O
 
-def add_assignment_constraints(n, m, c, model, X, S, O, Wmax, W, Ex_times, precedence_relations):
+def add_assignment_constraints(n, m, c, model, X, S, O, Wmax, task_power, Ex_times, precedence_relations):
     cons = 0
     # (1) Objective
     model.add_constraint(model.minimize(Wmax))
@@ -77,7 +77,7 @@ def add_assignment_constraints(n, m, c, model, X, S, O, Wmax, W, Ex_times, prece
     for t in range(c):
         model.add_constraint(
             model.sum([
-                O[j] * model.sum([S[j][s] for s in range(t - Ex_times[j] + 1, t + 1)])
+                task_power[j] * model.sum([S[j][s] for s in range(t - Ex_times[j] + 1, t + 1)])
                 for j in range(n)
             ]) <= Wmax
         )
@@ -93,7 +93,7 @@ def solve_assignment_problem(n, m, c, Ex_times, precedence_relations, W):
     model, cons = add_assignment_constraints(
         n, m, c, model, X, S, O, Wmax, W, Ex_times, precedence_relations
     )
-    model.set_parameters(LogVerbosity="Quiet", TimeLimit=3600)
+    model.set_parameters(TimeLimit=3600)
     try:
         solution = model.solve()
         return solution, n*m+n*c, cons
@@ -187,23 +187,23 @@ def optimal(filename):
         write_to_csv([filename[0], n, m, c, "Timeout", var, cons, end_time - start_time])
 
 file_name = [
-   ["MERTENS", 6, 6],
-    ["MERTENS", 2, 18],
-    ["BOWMAN", 5, 20],
-    ["JAESCHKE", 8, 6],
-    ["JAESCHKE", 3, 18],
-    ["JACKSON", 8, 7],
-    ["JACKSON", 3, 21],
-    ["MANSOOR", 4, 48],
-    ["MANSOOR", 2, 94],
-    ["MITCHELL", 8, 14],
-    ["MITCHELL", 3, 39],
-    ["ROSZIEG", 10, 14],
-    ["ROSZIEG", 4, 32],
-    ["BUXEY", 7, 47],
-    ["BUXEY", 14, 25],
-    ["SAWYER", 14, 25],
-    ["SAWYER", 7, 47]
+    #["MERTENS", 6, 6],
+    #["MERTENS", 2, 18],
+    #["BOWMAN", 5, 20],
+    #["JAESCHKE", 8, 6],
+    #["JAESCHKE", 3, 18],
+    #["JACKSON", 8, 7],
+    #["JACKSON", 3, 21],
+    #["MANSOOR", 4, 48],
+    #["MANSOOR", 2, 94],
+    #["MITCHELL", 8, 14],
+    #["MITCHELL", 3, 39],
+    ["ROSZIEG", 10, 14]#,
+    #["ROSZIEG", 4, 32],
+    #["BUXEY", 7, 47],
+    #["BUXEY", 14, 25],
+    #["SAWYER", 14, 25],
+    #["SAWYER", 7, 47]
 ]
 
 for i in range(0, len(file_name)):
